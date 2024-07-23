@@ -75,12 +75,13 @@ class VggNewModel:
             elif(isinstance(layer,nn.ReLU)):
                 layer_name=f"relu{layer_number}_{sublayer_numnber}"
                 sublayer_numnber+=1
+                layer.inplace = False
             elif(isinstance(layer,nn.MaxPool2d)):
                 layer_name=f"maxpool{layer_number}_{sublayer_numnber}"
                 layer_number+=1
                 sublayer_numnber=1
-          
-            model.add_module(layer_name,layer)
+
+            model.add_module(str(layer),layer)
             if(layer_name==self.context[0]):
                 # model.eval()
                 for param in model.parameters():
@@ -103,13 +104,13 @@ class VggNewModel:
             elif(isinstance(layer,nn.ReLU)):
                 layer_name=f"relu{layer_number}_{sublayer_numnber}"
                 sublayer_numnber+=1
-                
+                layer.inplace = False
             elif(isinstance(layer,nn.MaxPool2d)):
                 layer_name=f"maxpool{layer_number}_{sublayer_numnber}"
                 layer_number+=1
                 sublayer_numnber=1
             
-            model.add_module(layer_name,layer)
+            model.add_module(str(layer),layer)
             if(layer_name==self.style[0]):
                 # model.eval()
                 for param in model.parameters():
