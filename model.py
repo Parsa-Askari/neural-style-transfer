@@ -1,125 +1,68 @@
-from torchvision.models.vgg import vgg19
-from torchvision.models import VGG19_Weights
-import torch.nn as nn
 import torch
-from helpers import gramMatrix , featureMaps,Loss
-class VggNewModel:
-    def __init__(self,style,context,a=10,b=10000,device="cpu"):
-        # super(VggNewModel,self).__init__()
-        self.context=context
-        self.style=style
-        self.model=vgg19(weights=VGG19_Weights.DEFAULT)
-        # self.model.eval()
-        self.contextModel=[]
-        self.styleModel=[]
-        self.contextFeatures=[]
-        self.styleFeatures=[]
-        self.a=a
-        self.b=b
-        self.loss_fn=Loss()
-        self.device=device
-    def forward(self,noise_img):
-        context_loss=self.contextForward(noise_img)
-        style_loss=self.styleForward(noise_img)
-        loss=(self.a*context_loss)+(self.b*style_loss)
-        self.total_loss=loss.detach().cpu().item()
-        return loss
-    def contextForward(self,noise):
-        loss=0
-        inp_noise=noise
-        for i,model in enumerate(self.contextModel):
-            res=model(inp_noise)
-            target=self.contextFeatures[i]
-            loss+=self.loss_fn.forward(featureMaps(res),target)
-            inp_noise=res
-        self.closs_recorder=loss.detach().cpu().item()
-        return loss
-    def styleForward(self,noise):
-        loss=0
-        inp_noise=noise
-        for i,model in enumerate(self.styleModel):
-            res=model(inp_noise)
-            target=self.styleFeatures[i]
-            scale=((target.shape[0]**2)*(target.shape[1]**2))
-            loss+=(self.loss_fn.forward(gramMatrix(res),target))/scale
-            inp_noise=res
-        self.sloss_recorder=loss.detach().cpu().item()
-        return loss
-    @torch.no_grad()
-    def set_layers(self,style,context):
-        inp_context=context
-        for model in self.contextModel:
-            res=model(inp_context)
-            self.contextFeatures.append(featureMaps(res))
-            inp_context=res
+import torchvision.transforms as transforms
+import os
+import matplotlib.pyplot as plt
+from PIL import Image
+import torch.nn.functional as F
+from torch.optim import LBFGS
+# mean=[0.485, 0.456, 0.406]
+# std=[0.229, 0.224, 0.225]
 
-        inp_style=style
-        for model in self.styleModel:
-            res=model(inp_style)
-            self.styleFeatures.append(gramMatrix(res))
-            inp_style=res
+def returnTransforms(img,resize=True):
+    (H,W)=img.size
+    if(resize==False):
+        (W,H)=(224,224)
 
-    def createModel(self):
-        self.createContextModel()
-        self.createStyleModel()
-    def createContextModel(self):
-        layer_number=1
-        sublayer_numnber=1
-        layers=self.model.features
-        model=nn.Sequential()
-        for layer in layers:
-            layer_name=""
-            if(self.context==[]):
-                break
-            if(isinstance(layer,nn.Conv2d)):
-                layer_name=f"conv{layer_number}_{sublayer_numnber}"
-            elif(isinstance(layer,nn.ReLU)):
-                layer_name=f"relu{layer_number}_{sublayer_numnber}"
-                sublayer_numnber+=1
-                layer.inplace = False
-            elif(isinstance(layer,nn.MaxPool2d)):
-                layer_name=f"maxpool{layer_number}_{sublayer_numnber}"
-                layer_number+=1
-                sublayer_numnber=1
+    transform=transforms.Compose([
+        transforms.Resize((224, 224)),  # Resize to 224x224 pixels
+        transforms.ToTensor(),  # Convert to tensor and scale to [0, 1]
+        transforms.Lambda(lambda x : x.unsqueeze(0))
+    ])
+    reverse_transform = transforms.Compose([
+        transforms.Lambda(lambda x : x.squeeze(0)),
+        transforms.ToPILImage(),
+        transforms.Resize((W,H))
+    ])
 
-            model.add_module(str(layer),layer)
-            if(layer_name==self.context[0]):
-                # model.eval()
-                for param in model.parameters():
-                    param.requires_grad = False
-                self.contextModel.append(model.to(self.device))
-                self.context=self.context[1:]
-                model=nn.Sequential()
-                
-    def createStyleModel(self):
-        layer_number=1
-        sublayer_numnber=1
-        layers=self.model.features
-        model=nn.Sequential()
-        for layer in layers:
-            layer_name=""
-            if(self.style==[]):
-                break
-            if(isinstance(layer,nn.Conv2d)):
-                layer_name=f"conv{layer_number}_{sublayer_numnber}"
-            elif(isinstance(layer,nn.ReLU)):
-                layer_name=f"relu{layer_number}_{sublayer_numnber}"
-                sublayer_numnber+=1
-                layer.inplace = False
-            elif(isinstance(layer,nn.MaxPool2d)):
-                layer_name=f"maxpool{layer_number}_{sublayer_numnber}"
-                layer_number+=1
-                sublayer_numnber=1
-            
-            model.add_module(str(layer),layer)
-            if(layer_name==self.style[0]):
-                # model.eval()
-                for param in model.parameters():
-                    param.requires_grad = False
+    return transform,reverse_transform
 
-                self.styleModel.append(model.to(self.device))
-                model=nn.Sequential()
-                self.style=self.style[1:]
-                
+def showImage(images,count=3):
+    fig,axes=plt.subplots(1,count,figsize=(10,15))
+    i=0
+    for name,img in images.items():
+        axes[i].imshow(img)
+        axes[i].set_title(name)
+        i+=1
+    plt.show()
+def drawPlots(losses):
+    closs=losses['closs']
+    sloss=losses['sloss']
+    loss=losses['total loss']
+    fig,axes=plt.subplots(3,1,figsize=(15,15))
+    axes[0].plot(closs)
+    axes[0].set_title('closs')
+    axes[0].set_ylabel("loss")
+    axes[1].plot(sloss)
+    axes[1].set_title('sloss')
+    axes[1].set_ylabel("loss")
+    axes[2].plot(loss)
+    axes[2].set_title('total loss')
+    axes[2].set_ylabel("loss")
+    axes[2].set_xlabel("epochs")
+def gramMatrix(mat):
+    (b_size,channel,H,W)=mat.shape
+    new_mat=torch.reshape(mat,(b_size*channel,H*W))
+    return torch.matmul(new_mat,new_mat.T)
+def featureMaps(mat):
+    (b_size,channel,H,W)=mat.shape
+    new_mat=torch.reshape(mat,(b_size*channel,H*W))
+    return new_mat
 
+class Loss:
+    def __init__(self):
+        self.mse=F.mse_loss
+    def forward(self,input,target):
+        return self.mse(input,target)
 
+def buildOptimizer(parameter,max_iter=1000):
+    return LBFGS((parameter,),max_iter=max_iter, line_search_fn='strong_wolfe')
