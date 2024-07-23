@@ -4,11 +4,11 @@ import torch.nn as nn
 import torch
 from helpers import gramMatrix , featureMaps,Loss
 class VggNewModel:
-    def __init__(self,style,context,a=10,b=10000):
+    def __init__(self,style,context,a=10,b=10000,device="cpu"):
         # super(VggNewModel,self).__init__()
         self.context=context
         self.style=style
-        self.model=vgg19(pretrained=True)#weights=VGG19_Weights.DEFAULT
+        self.model=vgg19(weights=VGG19_Weights.DEFAULT)
         # self.model.eval()
         self.contextModel=[]
         self.styleModel=[]
@@ -17,11 +17,12 @@ class VggNewModel:
         self.a=a
         self.b=b
         self.loss_fn=Loss()
+        self.device=device
     def forward(self,noise_img):
         context_loss=self.contextForward(noise_img)
         style_loss=self.styleForward(noise_img)
         loss=(self.a*context_loss)+(self.b*style_loss)
-        self.total_loss=loss.detach().cpu()
+        self.total_loss=loss.detach().cpu().item()
         return loss
     def contextForward(self,noise):
         loss=0
@@ -31,7 +32,7 @@ class VggNewModel:
             target=self.contextFeatures[i]
             loss+=self.loss_fn.forward(featureMaps(res),target)
             inp_noise=res
-        self.closs_recorder=loss.detach().cpu()
+        self.closs_recorder=loss.detach().cpu().item()
         return loss
     def styleForward(self,noise):
         loss=0
@@ -42,7 +43,7 @@ class VggNewModel:
             scale=((target.shape[0]**2)*(target.shape[1]**2))
             loss+=(self.loss_fn.forward(gramMatrix(res),target))/scale
             inp_noise=res
-        self.sloss_recorder=loss.detach().cpu()
+        self.sloss_recorder=loss.detach().cpu().item()
         return loss
     @torch.no_grad()
     def set_layers(self,style,context):
@@ -86,7 +87,7 @@ class VggNewModel:
                 # model.eval()
                 for param in model.parameters():
                     param.requires_grad = False
-                self.contextModel.append(model)
+                self.contextModel.append(model.to(self.device))
                 self.context=self.context[1:]
                 model=nn.Sequential()
                 
@@ -116,7 +117,7 @@ class VggNewModel:
                 for param in model.parameters():
                     param.requires_grad = False
 
-                self.styleModel.append(model)
+                self.styleModel.append(model.to(self.device))
                 model=nn.Sequential()
                 self.style=self.style[1:]
                 
