@@ -11,7 +11,7 @@ style_folder="/kaggle/input/nst2-dataset/data/style-images"
 style_name="edtaonisl.jpg"
 context_name="figures.jpg"
 
-style=["relu1_1","relu2_1","relu3_1","relu4_1","relu5_1"]
+style=["conv1_1","conv2_1","conv3_1","conv4_1","conv5_1"]
 context=["conv4_2"]
 
 style_img=Image.open(os.path.join(style_folder,style_name))
